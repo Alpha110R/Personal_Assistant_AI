@@ -1,0 +1,11 @@
+# Ignore PyCharm IDE files
+.idea/
+
+# Ignore Python cache files
+__pycache__/
+
+# Ignore specific transcription file
+transcription.txt
+
+# Ignore Vosk model directory
+vosk-model-en-us-0.22/
