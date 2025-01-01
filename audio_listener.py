@@ -1,34 +1,16 @@
-import pyaudio
+import threading
 
-class AudioStream:
-    def __init__(self, device_index, rate=16000, channels=1, frames_per_buffer=4000):
-        self.device_index = device_index
-        self.rate = rate
-        self.channels = channels
-        self.frames_per_buffer = frames_per_buffer
-        self.audio = pyaudio.PyAudio()
-        self.stream = None
+class AudioListener:
+    def __init__(self, stream, audio_queue, stop_event):
+        self.stream = stream
+        self.audio_queue = audio_queue
+        self.stop_event = stop_event
 
-    def start(self):
+    def listen(self):
         try:
-            self.stream = self.audio.open(
-                format=pyaudio.paInt16,
-                channels=self.channels,
-                rate=self.rate,
-                input=True,
-                input_device_index=self.device_index,
-                frames_per_buffer=self.frames_per_buffer
-            )
-            self.stream.start_stream()
+            while not self.stop_event.is_set():
+                data = self.stream.read(512, exception_on_overflow=False)
+                self.audio_queue.put(data)
         except Exception as e:
-            print(f"Error opening audio stream: {e}")
-            self.audio.terminate()
-            raise
-
-    def read(self):
-        return self.stream.read(self.frames_per_buffer, exception_on_overflow=False)
-
-    def stop(self):
-        self.stream.stop_stream()
-        self.stream.close()
-        self.audio.terminate()
+            print(f"Error in audio listening thread: {e}")
+            self.audio_queue.put(None)
