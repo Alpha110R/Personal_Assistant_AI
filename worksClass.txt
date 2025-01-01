@@ -1,0 +1,41 @@
+from audio_stream import AudioStream
+from transcription_manager import TranscriptionManager
+import os
+
+def main():
+    model_path = "vosk-model-en-us-0.22"
+    if not os.path.exists(model_path):
+        print("Please download a Vosk model and place it in the 'model' directory.")
+        return
+
+    output_file = "transcription.txt"
+
+    print("Available audio input devices:")
+    audio = AudioStream(0)  # Temporary instantiation for listing devices
+    for i in range(audio.audio.get_device_count()):
+        device_info = audio.audio.get_device_info_by_index(i)
+        print(f"Index {i}: {device_info['name']} - Channels: {device_info['maxInputChannels']}")
+
+    device_index = int(input("Enter the index of the virtual audio device: "))
+    transcription_manager = TranscriptionManager(model_path, output_file)
+
+    audio_stream = AudioStream(device_index)
+
+    try:
+        audio_stream.start()
+        print("Listening to system audio... Press Ctrl+C to stop.")
+        while True:
+            data = audio_stream.read()
+            print(data)
+            transcription_manager.process_audio(data)
+            transcription_manager.manage_buffers()
+    except KeyboardInterrupt:
+        print("\nStopping transcription...")
+    finally:
+        audio_stream.stop()
+        with transcription_manager.lock:
+            transcription_manager.write_to_file(transcription_manager.active_buffer)
+            transcription_manager.write_to_file(transcription_manager.write_buffer)
+
+if __name__ == "__main__":
+    main()
