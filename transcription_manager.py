@@ -21,7 +21,7 @@ class TranscriptionManager:
         self.write_buffer = self.buffer_2
         self.max_length = 500
 
-    def setup(self):
+    def setup_model_and_audio(self):
         if not os.path.exists(self.model_path):
             print("Please download a Vosk model and place it in the 'model' directory.")
             return False
@@ -54,50 +54,61 @@ class TranscriptionManager:
 
         return True
 
+    def start_threads(self):
+        self.listener = AudioListener(self.stream, self.audio_queue, self.stop_event)
+        self.processor = AudioProcessor(self.recognizer, self.audio_queue, self.active_buffer, self.lock)
+        self.writer = FileWriter(self.write_queue, self.lock, self.output_file)
+
+        self.listener_thread = threading.Thread(target=self.listener.listen, daemon=True)
+        self.processor_thread = threading.Thread(target=self.processor.process, daemon=True)
+        self.writer_thread = threading.Thread(target=self.writer.write, daemon=True)
+
+        self.listener_thread.start()
+        self.processor_thread.start()
+        self.writer_thread.start()
+
+    def handle_buffers(self):
+        with self.lock:
+            if sum(len(t) for t in self.active_buffer) >= self.max_length:
+                self.active_buffer, self.write_buffer = self.write_buffer, self.active_buffer
+                self.write_queue.put(list(self.write_buffer))
+                self.write_buffer.clear()
+
+    def stop_threads(self):
+        print("\nStopping transcription...")
+        with self.lock:
+            if self.active_buffer:
+                self.write_queue.put(list(self.active_buffer))
+                self.active_buffer.clear()
+            if self.write_buffer:
+                self.write_queue.put(list(self.write_buffer))
+                self.write_buffer.clear()
+        self.stop_event.set()
+        self.audio_queue.put(None)
+        self.write_queue.put(None)
+
+        self.listener_thread.join(timeout=2)
+        self.processor_thread.join(timeout=2)
+        self.writer_thread.join(timeout=2)
+
+    def cleanup(self):
+        if self.listener_thread.is_alive():
+            print("Listener thread did not terminate properly.")
+        if self.processor_thread.is_alive():
+            print("Processor thread did not terminate properly.")
+        if self.writer_thread.is_alive():
+            print("Writer thread did not terminate properly.")
+        self.stream.stop_stream()
+        self.stream.close()
+        self.audio.terminate()
+
     def start(self):
-        listener = AudioListener(self.stream, self.audio_queue, self.stop_event)
-        processor = AudioProcessor(self.recognizer, self.audio_queue, self.active_buffer, self.lock)
-        writer = FileWriter(self.write_queue, self.lock, self.output_file)
-
-        listener_thread = threading.Thread(target=listener.listen, daemon=True)
-        processor_thread = threading.Thread(target=processor.process, daemon=True)
-        writer_thread = threading.Thread(target=writer.write, daemon=True)
-
-        listener_thread.start()
-        processor_thread.start()
-        writer_thread.start()
-
+        self.start_threads()
         print("Listening to system audio... Press Ctrl+C to stop.")
         try:
             while True:
-                with self.lock:
-                    if sum(len(t) for t in self.active_buffer) >= self.max_length:
-                        self.active_buffer, self.write_buffer = self.write_buffer, self.active_buffer
-                        self.write_queue.put(list(self.write_buffer))
-                        self.write_buffer.clear()
+                self.handle_buffers()
         except KeyboardInterrupt:
-            print("\nStopping transcription...")
-            with self.lock:
-                if self.active_buffer:
-                    self.write_queue.put(list(self.active_buffer))
-                    self.active_buffer.clear()
-                if self.write_buffer:
-                    self.write_queue.put(list(self.write_buffer))
-                    self.write_buffer.clear()
-
-            self.stop_event.set()
-            self.audio_queue.put(None)
-            self.write_queue.put(None)
-            listener_thread.join(timeout=2)
-            processor_thread.join(timeout=2)
-            writer_thread.join(timeout=2)
+            self.stop_threads()
         finally:
-            if listener_thread.is_alive():
-                print("Listener thread did not terminate properly.")
-            if processor_thread.is_alive():
-                print("Processor thread did not terminate properly.")
-            if writer_thread.is_alive():
-                print("Writer thread did not terminate properly.")
-            self.stream.stop_stream()
-            self.stream.close()
-            self.audio.terminate()
+            self.cleanup()
