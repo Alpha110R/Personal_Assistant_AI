@@ -1,20 +1,73 @@
+main working with all the classes
+
+
 import pyaudio
-from vosk import Model, KaldiRecognizer
-from audio_listener import AudioListener
-from audio_processor import AudioProcessor
-from diarization_processor import DiarizationProcessor
-from file_writer import FileWriter
+import json
+import os
 import threading
 import queue
-import os
-from pyannote.audio import Pipeline
+from vosk import Model, KaldiRecognizer
+
+class AudioListener:
+    def __init__(self, stream, audio_queue, stop_event):
+        self.stream = stream
+        self.audio_queue = audio_queue
+        self.stop_event = stop_event
+
+    def listen(self):
+        try:
+            while not self.stop_event.is_set():
+                data = self.stream.read(1024, exception_on_overflow=False)
+                self.audio_queue.put(data)
+        except Exception as e:
+            print(f"Error in audio listening thread: {e}")
+            self.audio_queue.put(None)
+
+class AudioProcessor:
+    def __init__(self, recognizer, audio_queue, active_buffer, lock):
+        self.recognizer = recognizer
+        self.audio_queue = audio_queue
+        self.active_buffer = active_buffer
+        self.lock = lock
+
+    def process(self):
+        try:
+            while True:
+                data = self.audio_queue.get()
+                if data is None:
+                    break
+                if self.recognizer.AcceptWaveform(data):
+                    result = json.loads(self.recognizer.Result())
+                    text = result.get("text", "")
+                    print(f"Recognized Text: {text}")
+                    with self.lock:
+                        self.active_buffer.append(text)
+        except Exception as e:
+            print(f"Error in audio processing thread: {e}")
+
+class FileWriter:
+    def __init__(self, write_queue, lock, output_file):
+        self.write_queue = write_queue
+        self.lock = lock
+        self.output_file = output_file
+
+    def write(self):
+        while True:
+            buffer = self.write_queue.get()
+            if buffer is None:
+                break
+            with self.lock:
+                with open(self.output_file, "a") as f:
+                    f.write(" ".join(buffer).strip() + "\n")
+                    f.flush()
+            self.write_queue.task_done()
+
 class TranscriptionManager:
     def __init__(self, model_path, output_file="transcription.txt"):
         self.model_path = model_path
         self.output_file = output_file
         self.audio_queue = queue.Queue()
         self.write_queue = queue.Queue()
-        self.diarization_queue = queue.Queue()
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
         self.buffer_1 = []
@@ -22,9 +75,6 @@ class TranscriptionManager:
         self.active_buffer = self.buffer_1
         self.write_buffer = self.buffer_2
         self.max_length = 500
-
-        # Initialize diarization pipeline
-        self.diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization")
 
     def setup_model_and_audio(self):
         if not os.path.exists(self.model_path):
@@ -49,7 +99,7 @@ class TranscriptionManager:
                 rate=16000,
                 input=True,
                 input_device_index=self.input_device_index,
-                frames_per_buffer=512
+                frames_per_buffer=1024
             )
             self.stream.start_stream()
         except Exception as e:
@@ -62,17 +112,14 @@ class TranscriptionManager:
     def start_threads(self):
         self.listener = AudioListener(self.stream, self.audio_queue, self.stop_event)
         self.processor = AudioProcessor(self.recognizer, self.audio_queue, self.active_buffer, self.lock)
-        self.diarization_processor = DiarizationProcessor(self.diarization_pipeline, self.audio_queue, self.diarization_queue)
-        self.writer = FileWriter(self.write_queue, self.diarization_queue, self.lock, self.output_file)
+        self.writer = FileWriter(self.write_queue, self.lock, self.output_file)
 
         self.listener_thread = threading.Thread(target=self.listener.listen, daemon=True)
         self.processor_thread = threading.Thread(target=self.processor.process, daemon=True)
-        self.diarization_thread = threading.Thread(target=self.diarization_processor.process, daemon=True)
         self.writer_thread = threading.Thread(target=self.writer.write, daemon=True)
 
         self.listener_thread.start()
         self.processor_thread.start()
-        self.diarization_thread.start()
         self.writer_thread.start()
 
     def handle_buffers(self):
@@ -94,11 +141,9 @@ class TranscriptionManager:
         self.stop_event.set()
         self.audio_queue.put(None)
         self.write_queue.put(None)
-        self.diarization_queue.put(None)
 
         self.listener_thread.join(timeout=2)
         self.processor_thread.join(timeout=2)
-        self.diarization_thread.join(timeout=2)
         self.writer_thread.join(timeout=2)
 
     def cleanup(self):
@@ -122,3 +167,10 @@ class TranscriptionManager:
             self.stop_threads()
         finally:
             self.cleanup()
+
+if __name__ == "__main__":
+    model_path = "vosk-model-en-us-0.22"
+    output_file = "transcription.txt"
+    manager = TranscriptionManager(model_path, output_file)
+    if manager.setup_model_and_audio():
+        manager.start()

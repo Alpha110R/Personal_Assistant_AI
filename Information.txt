@@ -1,0 +1,20 @@
+The token `pyannote` has been saved to C:\Users\alonr\.cache\huggingface\stored_tokens
+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
+the models for pyannote -> C:\Users\alonr\.cache\torch\pyannote
+
+For transcription:
+
+wav2vec 2.0:
+License: Apache 2.0.
+Cost: Free to use.
+Usage: wav2vec 2.0 is open-source and can be used for personal and commercial projects without restrictions.
+Requirements: You may need GPU resources for optimal performance in real-time or large-scale transcription tasks.
+
+Whisper:
+License: OpenAI Whisper is released under the MIT license.
+Cost: Free to use.
+Usage: It is open-source and can be used for both personal and commercial projects. Like wav2vec 2.0, it benefits significantly from GPU acceleration.
+
+Comparison with Vosk:
+Vosk is also free and open-source, licensed under the Apache 2.0 license.
+It is lightweight and optimized for real-time transcription with minimal resources, making it suitable for systems without GPU support.
