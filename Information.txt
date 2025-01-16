@@ -1,7 +1,3 @@
-The token `pyannote` has been saved to C:\Users\alonr\.cache\huggingface\stored_tokens
-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
-the models for pyannote -> C:\Users\alonr\.cache\torch\pyannote
-
 For transcription:
 
 wav2vec 2.0:
