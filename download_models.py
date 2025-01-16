@@ -1,7 +1,7 @@
 from pyannote.audio import Pipeline
 
 # Specify the model you want to download
-pipeline = Pipeline.from_pretrained('pyannote/speaker-diarization',use_auth_token='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')
+pipeline = Pipeline.from_pretrained('pyannote/speaker-diarization',use_auth_token='')
 
 # Save the model locally
 #pipeline.save_pretrained("./models/pyannote_speaker_diarization")
